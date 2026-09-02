@@ -16,11 +16,11 @@ services:
         value: 4000
 
       # Paste the connection strings from your Neon / Upstash / Bonsai dashboards:
-      - key: postgresql://neondb_owner:npg_F6TCrE8uYpbj@ep-calm-cloud-ayfl3tdh-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+      - key: DATABASE_URL
         sync: false          # Render will prompt you for the value in the UI
-      - key: rediss://default:gQAAAAAAAspcAAIgcDI0OWI5NDc3ZjFmZmI0MDJkYTFmMGFmNWQwM2IxZmIzNQ@comic-prawn-182876.upstash.io:6379
+      - key: REDIS_URL
         sync: false
-      - key: https://cc6ea0bb35:6c13324c0622abd2f62a@radiant-mahogany-1s3f0q43.us-east-1.bonsaisearch.net
+      - key: ELASTICSEARCH_URL
         sync: false
 
       # Set to the Vercel URL once your web service is deployed:
