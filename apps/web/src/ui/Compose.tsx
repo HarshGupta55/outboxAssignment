@@ -1,8 +1,17 @@
-import { ChangeEvent, FormEvent, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, Clock3, Paperclip, Upload, X } from 'lucide-react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Underline from '@tiptap/extension-underline';
+import TextAlign from '@tiptap/extension-text-align';
+import Link from '@tiptap/extension-link';
+import Placeholder from '@tiptap/extension-placeholder';
 import { api } from './api';
 import type { User } from './types';
 
+// ---------------------------------------------------------------------------
+// Types & constants
+// ---------------------------------------------------------------------------
 
 type Attachment = { id: string; file: File };
 
@@ -16,12 +25,12 @@ function extractEmails(text: string): string[] {
   return [...new Set(matches.map((addr) => addr.toLowerCase()))];
 }
 
-/** ISO datetime string for `minutesFromNow` minutes in the future, truncated to the minute. */
+/** ISO datetime string `minutes` from now, truncated to the minute. */
 function minutesFromNow(minutes: number): string {
   return new Date(Date.now() + minutes * 60_000).toISOString().slice(0, 16);
 }
 
-/** ISO datetime string for tomorrow at a given hour (0–23), truncated to the minute. */
+/** ISO datetime string for tomorrow at a given hour (0–23). */
 function tomorrowAt(hour: number): string {
   const date = new Date();
   date.setDate(date.getDate() + 1);
@@ -39,6 +48,240 @@ function readAsBase64(file: File): Promise<string> {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Toolbar button
+// ---------------------------------------------------------------------------
+
+interface ToolbarButtonProps {
+  active?: boolean;
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}
+
+function ToolbarButton({ active, title, onClick, children }: ToolbarButtonProps) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`editor-tool-btn${active ? ' active' : ''}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rich-text editor with toolbar
+// ---------------------------------------------------------------------------
+
+interface RichEditorProps {
+  /** Called whenever the HTML content changes. */
+  onChange: (html: string) => void;
+}
+
+/** Snapshot of which toolbar marks/nodes are active at the current cursor position. */
+type ActiveStates = {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strike: boolean;
+  heading: boolean;
+  orderedList: boolean;
+  bulletList: boolean;
+  blockquote: boolean;
+  codeBlock: boolean;
+  link: boolean;
+  alignLeft: boolean;
+  alignCenter: boolean;
+};
+
+const DEFAULT_ACTIVE: ActiveStates = {
+  bold: false, italic: false, underline: false, strike: false,
+  heading: false, orderedList: false, bulletList: false,
+  blockquote: false, codeBlock: false, link: false,
+  alignLeft: false, alignCenter: false,
+};
+
+function RichEditor({ onChange }: RichEditorProps) {
+  // Maintain active states in React state so the toolbar re-renders
+  // whenever the cursor moves or formatting changes.
+  const [active, setActive] = useState<ActiveStates>(DEFAULT_ACTIVE);
+
+  const syncActive = useCallback((e: import('@tiptap/react').Editor) => {
+    setActive({
+      bold:        e.isActive('bold'),
+      italic:      e.isActive('italic'),
+      underline:   e.isActive('underline'),
+      strike:      e.isActive('strike'),
+      heading:     e.isActive('heading', { level: 2 }),
+      orderedList: e.isActive('orderedList'),
+      bulletList:  e.isActive('bulletList'),
+      blockquote:  e.isActive('blockquote'),
+      codeBlock:   e.isActive('codeBlock'),
+      link:        e.isActive('link'),
+      alignLeft:   e.isActive({ textAlign: 'left' }),
+      alignCenter: e.isActive({ textAlign: 'center' }),
+    });
+  }, []);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Underline,
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      Link.configure({ openOnClick: false }),
+      Placeholder.configure({ placeholder: 'Type your email body here…' }),
+    ],
+    onUpdate({ editor: e }) {
+      onChange(e.getHTML());
+      syncActive(e);
+    },
+    // Re-sync whenever the cursor moves (selection changes without content change).
+    onSelectionUpdate({ editor: e }) {
+      syncActive(e);
+    },
+    // Re-sync on every document transaction (covers programmatic mark toggles).
+    onTransaction({ editor: e }) {
+      syncActive(e);
+    },
+    editorProps: {
+      attributes: { class: 'rich-editor-content', 'aria-label': 'Email body' },
+    },
+  });
+
+  if (!editor) return null;
+
+  function addLink() {
+    const url = window.prompt('Enter URL', 'https://');
+    if (!url) return;
+    editor!.chain().focus().setLink({ href: url }).run();
+  }
+
+  const sep = <span className="editor-sep" aria-hidden="true">│</span>;
+
+  return (
+    <div className="rich-editor">
+      {/* ── Toolbar ──────────────────────────────────────────────────── */}
+      <div className="editor-tools rich-editor-toolbar" role="toolbar" aria-label="Formatting">
+        <ToolbarButton title="Undo" onClick={() => editor.chain().focus().undo().run()}>
+          ↶
+        </ToolbarButton>
+        <ToolbarButton title="Redo" onClick={() => editor.chain().focus().redo().run()}>
+          ↷
+        </ToolbarButton>
+
+        {sep}
+
+        <ToolbarButton
+          title="Heading"
+          active={active.heading}
+          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+        >
+          <b style={{ fontSize: 13 }}>H</b>
+        </ToolbarButton>
+
+        {sep}
+
+        <ToolbarButton
+          title="Bold"
+          active={active.bold}
+          onClick={() => editor.chain().focus().toggleBold().run()}
+        >
+          <b>B</b>
+        </ToolbarButton>
+        <ToolbarButton
+          title="Italic"
+          active={active.italic}
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+        >
+          <em>I</em>
+        </ToolbarButton>
+        <ToolbarButton
+          title="Underline"
+          active={active.underline}
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+        >
+          <u>U</u>
+        </ToolbarButton>
+        <ToolbarButton
+          title="Strikethrough"
+          active={active.strike}
+          onClick={() => editor.chain().focus().toggleStrike().run()}
+        >
+          <s>S</s>
+        </ToolbarButton>
+
+        {sep}
+
+        <ToolbarButton
+          title="Align left"
+          active={active.alignLeft}
+          onClick={() => editor.chain().focus().setTextAlign('left').run()}
+        >
+          ☰
+        </ToolbarButton>
+        <ToolbarButton
+          title="Align center"
+          active={active.alignCenter}
+          onClick={() => editor.chain().focus().setTextAlign('center').run()}
+        >
+          ▤
+        </ToolbarButton>
+
+        {sep}
+
+        <ToolbarButton
+          title="Ordered list"
+          active={active.orderedList}
+          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+        >
+          1≡
+        </ToolbarButton>
+        <ToolbarButton
+          title="Bullet list"
+          active={active.bulletList}
+          onClick={() => editor.chain().focus().toggleBulletList().run()}
+        >
+          •≡
+        </ToolbarButton>
+
+        {sep}
+
+        <ToolbarButton
+          title="Blockquote"
+          active={active.blockquote}
+          onClick={() => editor.chain().focus().toggleBlockquote().run()}
+        >
+          ❝
+        </ToolbarButton>
+        <ToolbarButton
+          title="Link"
+          active={active.link}
+          onClick={addLink}
+        >
+          🔗
+        </ToolbarButton>
+        <ToolbarButton
+          title="Code block"
+          active={active.codeBlock}
+          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+        >
+          {'</>'}
+        </ToolbarButton>
+      </div>
+
+      {/* ── Content area ─────────────────────────────────────────────── */}
+      <EditorContent editor={editor} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Compose component
+// ---------------------------------------------------------------------------
+
 interface ComposeProps {
   user: User;
   onClose: () => void;
@@ -53,6 +296,13 @@ export function Compose({ user, onClose, onDone }: ComposeProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  // The editor writes its HTML here; we read it on submit.
+  const htmlRef = useRef('');
+
+  // -------------------------------------------------------------------------
+  // Handlers
+  // -------------------------------------------------------------------------
+
   /** Import a lead list from a CSV / TXT file and merge it with existing recipients. */
   function handleLeadFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -66,7 +316,7 @@ export function Compose({ user, onClose, onDone }: ComposeProps) {
       );
     };
     reader.readAsText(file);
-    event.target.value = ''; // allow re-selecting the same file
+    event.target.value = '';
   }
 
   /** Validate and add attachment files chosen by the user. */
@@ -103,9 +353,14 @@ export function Compose({ user, onClose, onDone }: ComposeProps) {
 
     const values = Object.fromEntries(new FormData(event.currentTarget));
     const leadList = extractEmails(recipients);
+    const html = htmlRef.current;
 
     if (!leadList.length) {
       setError('Enter a recipient or upload a CSV/text lead list.');
+      return;
+    }
+    if (!html || html === '<p></p>') {
+      setError('Email body cannot be empty.');
       return;
     }
 
@@ -123,6 +378,7 @@ export function Compose({ user, onClose, onDone }: ComposeProps) {
 
       const result = await api.schedule({
         ...values,
+        html,
         emails: leadList,
         attachments: encodedAttachments,
         scheduledAt: new Date(scheduledAt).toISOString(),
@@ -144,6 +400,10 @@ export function Compose({ user, onClose, onDone }: ComposeProps) {
     setScheduledAt(isoValue);
     setIsSchedulerOpen(false);
   }
+
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
 
   return (
     <div className="composer-page">
@@ -251,13 +511,8 @@ export function Compose({ user, onClose, onDone }: ComposeProps) {
             </label>
           </div>
 
-          <div className="editor">
-            <div className="reply-label">Type Your Reply...</div>
-            <div className="editor-tools">
-              ↶　↷　│　Tt⌃　│　<b>B</b>　<em>I</em>　<u>U</u>　│　☰　⌃　│　1≡　•≡　›≡　≡‹　❝　▤　│　S̶
-            </div>
-            <textarea name="html" required aria-label="Email body" />
-          </div>
+          {/* ── Rich text editor ─────────────────────────────────────── */}
+          <RichEditor onChange={(html) => { htmlRef.current = html; }} />
 
           {/* ── Attachment list ──────────────────────────────────────── */}
           {attachments.length > 0 && (
@@ -290,6 +545,10 @@ export function Compose({ user, onClose, onDone }: ComposeProps) {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Field – a labelled text input
+// ---------------------------------------------------------------------------
 
 interface FieldProps {
   label: string;
