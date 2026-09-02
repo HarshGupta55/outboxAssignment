@@ -1,0 +1,78 @@
+services:
+  # ── API (Node.js / Express) ────────────────────────────────────────────────
+  - type: web
+    name: outbox-api
+    runtime: node
+    rootDir: apps/api
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PORT
+        value: 4000
+      - key: PORT
+        value: 4000
+
+      # Paste the connection strings from your Neon / Upstash / Bonsai dashboards:
+      - key: DATABASE_URL
+        sync: false          # Render will prompt you for the value in the UI
+      - key: REDIS_URL
+        sync: false
+      - key: ELASTICSEARCH_URL
+        sync: false
+
+      # Set to the Vercel URL once your web service is deployed:
+      - key: WEB_ORIGIN
+        sync: false
+
+      # Worker tuning (safe defaults):
+      - key: WORKER_CONCURRENCY
+        value: 5
+      - key: MIN_SEND_INTERVAL_MS
+        value: 2000
+      - key: MAX_EMAILS_PER_HOUR_PER_SENDER
+        value: 200
+
+      # Auth / OAuth — fill these in the Render dashboard:
+      - key: SESSION_COOKIE_SECURE
+        value: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false          # https://<your-api>.onrender.com/api/auth/google/callback
+      - key: SLACK_CLIENT_ID
+        sync: false
+      - key: SLACK_CLIENT_SECRET
+        sync: false
+      - key: SLACK_REDIRECT_URI
+        sync: false          # https://<your-api>.onrender.com/api/slack/callback
+      - key: SLACK_CHANNEL_ID
+        sync: false
+
+  # ── Web (Vite static site) ─────────────────────────────────────────────────
+  - type: web
+    name: outbox-web
+    runtime: static
+    rootDir: apps/web
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    routes:
+      # SPA fallback – all unknown paths serve index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # Set to https://<your-api>.onrender.com after deploying the API:
+      - key: VITE_API_URL
+        sync: false

@@ -1,0 +1,13 @@
+{
+  "name": "outbox-labs-email-scheduler",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w @outbox/api\" \"npm run dev -w @outbox/web\"",
+    "build": "npm run build -w @outbox/api && npm run build -w @outbox/web",
+    "db:migrate": "npm run db:migrate -w @outbox/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
