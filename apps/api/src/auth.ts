@@ -56,7 +56,7 @@ async function createSession(userId: string, res: express.Response): Promise<voi
   );
   res.cookie(SESSION_COOKIE, sessionId, {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: 'none',
     secure: config.sessionSecure,
     maxAge: SESSION_MS,
     path: '/',
