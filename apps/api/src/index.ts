@@ -11,12 +11,42 @@ import { emailQueue } from './queue.js';
 import { ensureIndex } from './search.js';
 import { registerSlackRoutes } from './slack.js';
 import { requeueStuckDeliveries } from './worker.js';
-
+import nodemailer from 'nodemailer';
 // ---------------------------------------------------------------------------
 // Express app
 // ---------------------------------------------------------------------------
 
 const app = express();
+
+app.get('/api/_debug/ethereal-test', async (req, res) => {
+  try {
+    console.time('ethereal-test');
+    const account = await nodemailer.createTestAccount();
+    console.log('Account created:', account.user);
+
+    const transport = nodemailer.createTransport({
+      host: account.smtp.host,
+      port: account.smtp.port,
+      secure: account.smtp.secure,
+      auth: { user: account.user, pass: account.pass },
+      connectionTimeout: 20000,
+    });
+
+    const info = await transport.sendMail({
+      from: account.user,
+      to: account.user,
+      subject: 'test',
+      text: 'hello',
+    });
+
+    console.timeEnd('ethereal-test');
+    res.json({ ok: true, previewUrl: nodemailer.getTestMessageUrl(info) });
+  } catch (error) {
+    console.timeEnd('ethereal-test');
+    console.error('Ethereal test failed:', error);
+    res.status(500).json({ ok: false, error: String(error) });
+  }
+});
 
 // Only allow requests from the configured web origin and local dev servers.
 const permittedOrigins = new Set([
