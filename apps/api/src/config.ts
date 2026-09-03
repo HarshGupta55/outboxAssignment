@@ -13,7 +13,7 @@ function envNumber(key: string, fallback: number): number {
 }
 
 export const config = {
-  port: envNumber('API_PORT', 4000),
+  port: Number(process.env.PORT || process.env.API_PORT || 4000),
 
   // Data stores
   db: process.env.DATABASE_URL ?? 'postgres://outbox:outbox@localhost:5432/outbox',
